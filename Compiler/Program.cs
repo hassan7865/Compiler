@@ -1,19 +1,21 @@
-﻿using System.Text.RegularExpressions;
-
+﻿using System;
+using System.Collections.Generic;
+using System.Text.RegularExpressions;
 
 public enum TokenTypes
 {
-    INTEGER,
+    INT,
     BOOL,
     FLOAT,
     IDENTIFIER,
-    NUMBER,
+    INTEGER,
     OPERATORS,
     ASSIGNMENT,
     SEMICOLON,
     UNKNOWN,
-    CONSOLE
-
+    CONSOLE,
+    FLOATING_POINT,
+    BOOL_LITERAL
 }
 
 public class Token
@@ -27,11 +29,11 @@ public class Token
         Value = value;
     }
 }
+
 public class Lexer
 {
     private string _sourceCode;
     private List<Token> _tokens;
-
 
     public Lexer(string sourceCode)
     {
@@ -42,18 +44,18 @@ public class Lexer
     public List<Token> Tokenize()
     {
         var KEYWORDS = new Dictionary<TokenTypes, string>
-      {
-         {TokenTypes.INTEGER, @"\bint\b" },
-         {TokenTypes.FLOAT, @"\bfloat\b" },
-         {TokenTypes.BOOL, @"\b(?:true|false)\b" },
-         {TokenTypes.CONSOLE,@"\bconsole\b" },
-         {TokenTypes.IDENTIFIER, @"[a-zA-Z_]\w*" },
-         { TokenTypes.ASSIGNMENT, @"=" },
-         {TokenTypes.NUMBER, @"\d+(\.\d+)?" },
-         {TokenTypes.OPERATORS, @"[\+\-\*\/]" },
-      
-
-      };
+        {
+            {TokenTypes.INT, @"\bint\b" },
+            {TokenTypes.FLOAT, @"\bfloat\b" },
+            {TokenTypes.BOOL, @"\bbool\b" },
+            {TokenTypes.BOOL_LITERAL, @"\b(?:true|false)\b" },
+            {TokenTypes.CONSOLE, @"\bconsole\b" },
+            {TokenTypes.IDENTIFIER, @"[a-zA-Z_]\w*" },
+            {TokenTypes.ASSIGNMENT, @"=" },
+            {TokenTypes.FLOATING_POINT, @"\b\d+\.\d+\b" },
+            {TokenTypes.INTEGER, @"\b\d+\b" },
+            {TokenTypes.OPERATORS, @"[\+\-\*\/]" },
+        };
 
         var CombinedREGEX = string.Join("|", KEYWORDS.Values);
 
@@ -77,7 +79,6 @@ public class Lexer
         }
         return TokenTypes.UNKNOWN;
     }
-
 }
 
 public class Parser
@@ -85,29 +86,30 @@ public class Parser
     private readonly List<Token> _tokens;
     private int _currentIndex;
     private Token _currentToken;
+    private Dictionary<string, TokenTypes> Variables;
 
     public Parser(List<Token> token)
     {
         _tokens = token;
         _currentIndex = 0;
         _currentToken = _tokens[_currentIndex];
+        Variables = new Dictionary<string, TokenTypes>();
     }
 
     private void Advance()
     {
         _currentIndex++;
-        if(_currentIndex < _tokens.Count)
+        if (_currentIndex < _tokens.Count)
         {
             _currentToken = _tokens[_currentIndex];
         }
     }
 
-
     private void ConsumeToken(TokenTypes tokenType)
     {
-        if(_currentToken.Type == tokenType)
+        if (_currentToken.Type == tokenType)
         {
-            Advance();  
+            Advance();
         }
         else
         {
@@ -122,18 +124,16 @@ public class Parser
 
     public void Parse()
     {
-
         while (_currentIndex < _tokens.Count)
         {
-            Declaration_Assign();
+            Declaration();
+            Assign();
         }
-
     }
 
-    private void Declaration_Assign()
+    private void Declaration()
     {
-        if (_currentToken.Type == TokenTypes.INTEGER || _currentToken.Type == TokenTypes.BOOL || _currentToken.Type == TokenTypes.FLOAT)
-
+        if (_currentToken.Type == TokenTypes.INT || _currentToken.Type == TokenTypes.FLOAT || _currentToken.Type == TokenTypes.BOOL)
         {
             var variableType = _currentToken.Type;
             ConsumeToken(variableType);
@@ -142,31 +142,11 @@ public class Parser
             {
                 var variableName = _currentToken.Value;
                 ConsumeToken(TokenTypes.IDENTIFIER);
+
                 Console.WriteLine($"Variable declared: Type={variableType}, Name={variableName}");
 
-                //ASSIGN
 
-                if (_currentToken.Type == TokenTypes.ASSIGNMENT)
-                {
-                    ConsumeToken(TokenTypes.ASSIGNMENT);
-
-
-                    if (_currentToken.Type == TokenTypes.NUMBER)
-                    {
-                        if (variableType == TokenTypes.INTEGER)
-                        {
-                            var value = _currentToken.Value;
-                            ConsumeToken(_currentToken.Type);
-
-                            Console.WriteLine($"Variable assigned: Name={variableName}, Value={value}");
-                        }
-
-                    }
-                    else
-                    {
-                        throw new Exception($"Invalid assignment value cannot assign {_currentToken.Type} into {variableType}");
-                    }
-                }
+                Variables.Add(variableName, variableType);
             }
             else
             {
@@ -179,17 +159,87 @@ public class Parser
         }
     }
 
+    private void Assign()
+    {
+        if (_currentToken.Type == TokenTypes.IDENTIFIER)
+        {
+            var variableName = _currentToken.Value;
+            ConsumeToken(_currentToken.Type);
+
+            if (_currentToken.Type == TokenTypes.ASSIGNMENT)
+            {
+                ConsumeToken(TokenTypes.ASSIGNMENT);
+
+                if (Variables.TryGetValue(variableName, out TokenTypes variableType))
+                {
+                    if ((_currentToken.Type == TokenTypes.INTEGER && variableType == TokenTypes.INT) ||
+                        (_currentToken.Type == TokenTypes.FLOATING_POINT && variableType == TokenTypes.FLOAT) ||
+                        (_currentToken.Type == TokenTypes.BOOL_LITERAL && variableType == TokenTypes.BOOL))
+                    {
+                        OutputVariableAssignment(variableName);
+                    }
+                    else
+                    {
+                        throw new Exception($"Invalid assignment value cannot assign {_currentToken.Type} into {variableType}");
+                    }
+                }
+                else
+                {
+                    throw new Exception("Variable not found");
+                }
+            }
+            else
+            {
+                throw new Exception("Invalid assignment");
+            }
+        }
+        else
+        {
+            throw new Exception("Invalid assignment");
+        }
+    }
+
+    private void OutputVariableAssignment(string variableName)
+    {
+        var value = _currentToken.Value;
+        ConsumeToken(_currentToken.Type);
+
+        Console.WriteLine($"Variable assigned: Name={variableName}, Value={value}");
+    }
+
+    private void Print()
+    {
+        if (_currentToken.Type == TokenTypes.CONSOLE)
+        {
+            ConsumeToken(TokenTypes.CONSOLE);
+            if (_currentToken.Type == TokenTypes.IDENTIFIER)
+            {
+                var variableName = _currentToken.Value;
+                ConsumeToken(TokenTypes.IDENTIFIER);
+
+                Console.WriteLine($"Print variable: Name={variableName}");
+            }
+            else
+            {
+                throw new Exception("Invalid print statement");
+            }
+        }
+    }
 }
 
 class Program
 {
     static void Main(string[] args)
     {
+        //var sourceCode = @"
+        //    int num;
+        //    num = 7;
+        // ";
+
         var sourceCode = @"
             int num1 = 1;int num2 = 2
+
         ";
-
-
 
         Lexer lexer = new Lexer(sourceCode);
         List<Token> tokens = lexer.Tokenize();
@@ -202,6 +252,5 @@ class Program
 
         Parser parser = new Parser(tokens);
         parser.Parse();
-
     }
 }
